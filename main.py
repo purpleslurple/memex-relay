@@ -357,16 +357,30 @@ async def get_section_pages(
     except Exception as e:
         logger.error(f"GET pages failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-@app.get("/v1/notebooks/{notebook_id}/pages", response_model=PageListResponse)
+@app.get("/v1/notebooks/{notebook_name}/pages", response_model=PageListResponse)
 async def get_notebook_pages(
-    notebook_id: str,
+    notebook_name: str,
     token: str = Depends(verify_token)
 ):
     """List all pages in a notebook (flattened from all sections)"""
-    logger.info(f"GET all pages request for notebook: {notebook_id}")
+    logger.info(f"GET all pages request for notebook: {notebook_name}")
     
     try:
-        # First get all sections in the notebook
+        # First, find the notebook ID by name
+        notebooks_result = await onenote_client.list_notebooks()
+        notebook_id = None
+        
+        for nb in notebooks_result.get("notebooks", []):
+            if nb.get("name", "").lower() == notebook_name.lower():
+                notebook_id = nb.get("id")
+                break
+        
+        if not notebook_id:
+            raise HTTPException(status_code=404, detail=f"Notebook '{notebook_name}' not found")
+        
+        logger.info(f"Found notebook ID: {notebook_id}")
+        
+        # Get all sections in the notebook
         sections_result = await onenote_client.list_sections(notebook_id)
         
         all_pages = []
