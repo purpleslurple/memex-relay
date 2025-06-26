@@ -12,11 +12,15 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi import FastAPI, HTTPException, Depends, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 import uvicorn
+
+# Import the MCP client for real OneNote integration
+from mcp_client import onenote_client
 
 # Configure logging
 logging.basicConfig(
@@ -40,6 +44,32 @@ class SearchRequest(BaseModel):
 
 class GetPageRequest(BaseModel):
     page_id: str = Field(..., description="OneNote page ID to retrieve")
+
+class ListSectionsRequest(BaseModel):
+    notebook_id: str = Field(..., description="OneNote notebook ID")
+
+class ListPagesRequest(BaseModel):
+    section_id: str = Field(..., description="OneNote section ID")
+
+class SectionInfo(BaseModel):
+    id: str
+    name: str
+    page_count: Optional[int] = None
+    created: Optional[str] = None
+    modified: Optional[str] = None
+
+class ListSectionsResponse(BaseModel):
+    sections: List[SectionInfo]
+
+class PageInfo(BaseModel):
+    id: str
+    title: str
+    created: Optional[str] = None
+    modified: Optional[str] = None
+    content_url: Optional[str] = None
+
+class ListPagesResponse(BaseModel):
+    pages: List[PageInfo]
 
 class WriteNoteRequest(BaseModel):
     notebook: str = Field(..., description="Target notebook name")
@@ -74,57 +104,29 @@ class NotebookInfo(BaseModel):
     name: str
     section_count: Optional[int] = None
 
-class ListNotebooksResponse(BaseModel):
-    notebooks: List[NotebookInfo]
+class NotebookListResponse(BaseModel):
+    notebooks: List[str]
+
+class PageListResponse(BaseModel):
+    pages: List[str]
 
 class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     timestamp: str
 
-# For now, we'll simulate MCP calls since we need the actual MCP client
-# This will be replaced with real MCP integration
-async def simulate_mcp_call(tool_name: str, arguments: Dict[str, Any]) -> Any:
-    """Simulate MCP calls for now - replace with real MCP client"""
-    logger.info(f"Simulating MCP call: {tool_name} with args: {arguments}")
-    
-    if tool_name == "search_notes":
-        return {
-            "results": [
-                {
-                    "title": f"Sample result for '{arguments.get('query', '')}'",
-                    "id": "sample-page-id-123",
-                    "snippet": "Sample content snippet...",
-                    "notebook": "Sample Notebook"
-                }
-            ]
-        }
-    elif tool_name == "get_page":
-        return {
-            "title": "Sample Page",
-            "content": "Sample page content here...",
-            "notebook": "Sample Notebook",
-            "last_modified": datetime.utcnow().isoformat()
-        }
-    elif tool_name == "create_page":
-        return {
-            "page_id": "new-page-id-456",
-            "status": "created"
-        }
-    elif tool_name == "list_notebooks":
-        return {
-            "notebooks": [
-                {"id": "nb1", "name": "Sample Notebook 1", "section_count": 3},
-                {"id": "nb2", "name": "Sample Notebook 2", "section_count": 5}
-            ]
-        }
-    else:
-        raise HTTPException(status_code=500, detail=f"Unknown tool: {tool_name}")
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
-    logger.info("Starting Memex Relay API")
+    logger.info("Starting Memex Relay API with real OneNote MCP integration")
+    
+    # Check OneNote authentication status on startup
+    try:
+        auth_status = await onenote_client.check_authentication()
+        logger.info(f"OneNote auth status: {auth_status.get('status', 'unknown')}")
+    except Exception as e:
+        logger.warning(f"Could not check OneNote auth status: {e}")
+    
     yield
     logger.info("Shutting down Memex Relay API")
 
@@ -144,6 +146,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Ngrok bypass middleware
+@app.middleware("http")
+async def add_ngrok_bypass_header(request: Request, call_next):
+    """Add ngrok-skip-browser-warning header to all responses"""
+    response = await call_next(request)
+    response.headers["ngrok-skip-browser-warning"] = "true"
+    return response
 
 # Auth dependency
 async def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
@@ -168,12 +178,16 @@ def create_error_response(error: str, detail: str = None) -> Dict:
 @app.get("/")
 async def root():
     """API health check"""
+    # Check authentication status for the health check
+    auth_status = await onenote_client.check_authentication()
+    
     return {
         "service": "Memex Relay API",
         "version": "1.0.0",
         "status": "operational",
         "timestamp": datetime.utcnow().isoformat(),
-        "note": "This is a simulation - replace with real MCP integration"
+        "onenote_auth": auth_status.get("status", "unknown"),
+        "note": "Connected to real OneNote MCP server"
     }
 
 @app.post("/v1/search", response_model=SearchResponse)
@@ -185,11 +199,8 @@ async def search_notebooks(
     logger.info(f"Search request: {request.query}")
     
     try:
-        # Call simulated MCP search tool
-        result = await simulate_mcp_call("search_notes", {
-            "query": request.query,
-            "limit": request.limit
-        })
+        # Call real MCP search tool
+        result = await onenote_client.search_notes(request.query, request.limit)
         
         # Transform result to API format
         search_results = []
@@ -222,10 +233,8 @@ async def get_page(
     logger.info(f"Get page request: {request.page_id}")
     
     try:
-        # Call simulated MCP get page tool
-        result = await simulate_mcp_call("get_page", {
-            "page_id": request.page_id
-        })
+        # Call real MCP get page tool
+        result = await onenote_client.get_page_content(request.page_id)
         
         return PageContent(
             title=result.get("title", ""),
@@ -250,12 +259,12 @@ async def write_note(
     logger.info(f"Write note request: {request.page_title} in {request.notebook}")
     
     try:
-        # Call simulated MCP create page tool
-        result = await simulate_mcp_call("create_page", {
-            "notebook": request.notebook,
-            "title": request.page_title,
-            "content": request.content
-        })
+        # Call real MCP create page tool
+        result = await onenote_client.create_page(
+            request.notebook, 
+            request.page_title, 
+            request.content
+        )
         
         return WriteResponse(
             status="success",
@@ -269,29 +278,154 @@ async def write_note(
         logger.error(f"Write note failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/v1/notebooks", response_model=ListNotebooksResponse)
+@app.get("/v1/notebooks", response_model=NotebookListResponse)
 async def list_notebooks(token: str = Depends(verify_token)):
     """List available OneNote notebooks"""
     logger.info("List notebooks request")
     
     try:
-        # Call simulated MCP list notebooks tool
-        result = await simulate_mcp_call("list_notebooks", {})
+        # Call real MCP list notebooks tool
+        result = await onenote_client.list_notebooks()
         
-        notebooks = []
-        for nb in result.get("notebooks", []):
-            notebooks.append(NotebookInfo(
-                id=nb.get("id", ""),
-                name=nb.get("name", ""),
-                section_count=nb.get("section_count", 0)
-            ))
+        # Transform to match schema expectation (array of strings)
+        notebook_names = [nb.get("name", "") for nb in result.get("notebooks", [])]
         
-        return ListNotebooksResponse(notebooks=notebooks)
+        return NotebookListResponse(notebooks=notebook_names)
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"List notebooks failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/v1/notebooks/{notebook_id}/sections", response_model=ListSectionsResponse)
+async def get_notebook_sections(
+    notebook_id: str,
+    token: str = Depends(verify_token)
+):
+    """List sections in a specific notebook (REST style)"""
+    logger.info(f"GET sections request for notebook: {notebook_id}")
+    
+    try:
+        # Call real MCP list sections tool
+        result = await onenote_client.list_sections(notebook_id)
+        
+        sections = []
+        for section in result.get("sections", []):
+            sections.append(SectionInfo(
+                id=section.get("id", ""),
+                name=section.get("name", ""),
+                page_count=section.get("page_count", 0),
+                created=section.get("created"),
+                modified=section.get("modified")
+            ))
+        
+        return ListSectionsResponse(sections=sections)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GET sections failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/v1/sections/{section_id}/pages", response_model=ListPagesResponse)
+async def get_section_pages(
+    section_id: str,
+    token: str = Depends(verify_token)
+):
+    """List pages in a specific section (REST style)"""
+    logger.info(f"GET pages request for section: {section_id}")
+    
+    try:
+        # Call real MCP list pages tool
+        result = await onenote_client.list_pages(section_id)
+        
+        pages = []
+        for page in result.get("pages", []):
+            pages.append(PageInfo(
+                id=page.get("id", ""),
+                title=page.get("title", ""),
+                created=page.get("created"),
+                modified=page.get("modified"),
+                content_url=page.get("content_url")
+            ))
+        
+        return ListPagesResponse(pages=pages)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GET pages failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/v1/notebooks/{notebook_id}/pages", response_model=PageListResponse)
+async def get_notebook_pages(
+    notebook_id: str,
+    token: str = Depends(verify_token)
+):
+    """List all pages in a notebook (flattened from all sections)"""
+    logger.info(f"GET all pages request for notebook: {notebook_id}")
+    
+    try:
+        # First get all sections in the notebook
+        sections_result = await onenote_client.list_sections(notebook_id)
+        
+        all_pages = []
+        for section in sections_result.get("sections", []):
+            section_id = section.get("id")
+            try:
+                # Get pages from each section
+                pages_result = await onenote_client.list_pages(section_id)
+                all_pages.extend(pages_result.get("pages", []))
+            except Exception as e:
+                logger.debug(f"Error getting pages from section {section_id}: {e}")
+                continue
+        
+        # Transform to match schema expectation (array of strings)
+        page_titles = [page.get("title", "") for page in all_pages]
+        
+        return PageListResponse(pages=page_titles)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GET notebook pages failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/v1/pages/{page_id}", response_model=PageContent)
+async def get_page_by_id(
+    page_id: str,
+    token: str = Depends(verify_token)
+):
+    """Get content of a specific page by ID"""
+    logger.info(f"GET page content request: {page_id}")
+    
+    try:
+        # Call real MCP get page tool
+        result = await onenote_client.get_page_content(page_id)
+        
+        return PageContent(
+            title=result.get("title", ""),
+            content=result.get("content", ""),
+            page_id=page_id,
+            notebook=result.get("notebook", ""),
+            last_modified=result.get("last_modified", "")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GET page by ID failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# New endpoint for checking OneNote authentication
+@app.get("/v1/auth/status")
+async def auth_status(token: str = Depends(verify_token)):
+    """Check OneNote authentication status"""
+    try:
+        result = await onenote_client.check_authentication()
+        return result
+    except Exception as e:
+        logger.error(f"Auth status check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Error handlers
