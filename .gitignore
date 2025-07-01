@@ -53,3 +53,5 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+custom_gpt_schema_original.json
+custom_gpt_schema_claude_capable.json
