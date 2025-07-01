@@ -44,6 +44,29 @@ This is currently running with **simulated responses** for testing. To connect t
 2. Update the `simulate_mcp_call` function with real MCP client code
 3. Configure your MCP server path
 
+## Testing
+
+### Automated Testing
+```bash
+python test_api.py
+```
+
+### Service Health Check
+
+Quick way to verify all services are running:
+
+```bash
+# Make executable and run
+chmod +x service_health_check.sh
+./service_health_check.sh
+```
+
+This checks:
+- ngrok tunnel status
+- Memex Relay API health
+- OneNote authentication status
+- Basic endpoint functionality
+
 ## For ChatGPT Integration
 
 Use the Custom GPT configuration provided in the conversation artifacts to give ChatGPT direct access to this API.
