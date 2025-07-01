@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -75,6 +75,36 @@ class WriteNoteRequest(BaseModel):
     notebook: str = Field(..., description="Target notebook name")
     page_title: str = Field(..., description="Title for the new page")
     content: str = Field(..., description="Page content in markdown format")
+
+class CreateNotebookRequest(BaseModel):
+    name: str = Field(..., description="Name of the new notebook")
+    description: Optional[str] = Field(None, description="Optional description for the notebook")
+
+class CreateSectionRequest(BaseModel):
+    notebook_name: str = Field(..., description="Name of the notebook to create section in")
+    section_name: str = Field(..., description="Name of the new section")
+
+class UpdatePageRequest(BaseModel):
+    page_id: str = Field(..., description="ID of the page to update")
+    content_html: str = Field(..., description="HTML content to add to the page")
+    target_element: Optional[str] = Field("body", description="Target element to update (default: body)")
+
+class CreateNotebookResponse(BaseModel):
+    status: str
+    message: str
+    notebook_id: Optional[str] = None
+    notebook_name: Optional[str] = None
+
+class CreateSectionResponse(BaseModel):
+    status: str
+    message: str
+    section_id: Optional[str] = None
+    section_name: Optional[str] = None
+
+class UpdatePageResponse(BaseModel):
+    status: str
+    message: str
+    page_id: str
 
 class SearchResult(BaseModel):
     title: str
@@ -405,6 +435,100 @@ async def get_notebook_pages(
         logger.error(f"GET notebook pages failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/v1/notebooks/{notebook_name}/sections", response_model=ListSectionsResponse)
+async def get_notebook_sections_by_name(
+    notebook_name: str,
+    token: str = Depends(verify_token)
+):
+    """List sections in a notebook using notebook name (human-friendly)"""
+    logger.info(f"GET sections request for notebook name: {notebook_name}")
+    
+    try:
+        # First, find the notebook ID by name
+        notebooks_result = await onenote_client.list_notebooks()
+        notebook_id = None
+        
+        for nb in notebooks_result.get("notebooks", []):
+            if nb.get("name", "").lower() == notebook_name.lower():
+                notebook_id = nb.get("id")
+                break
+        
+        if not notebook_id:
+            raise HTTPException(status_code=404, detail=f"Notebook '{notebook_name}' not found")
+        
+        logger.info(f"Found notebook ID: {notebook_id}")
+        
+        # Get sections in the notebook
+        result = await onenote_client.list_sections(notebook_id)
+        
+        sections = []
+        for section in result.get("sections", []):
+            sections.append(SectionInfo(
+                id=section.get("id", ""),
+                name=section.get("name", ""),
+                page_count=section.get("page_count", 0),
+                created=section.get("created"),
+                modified=section.get("modified")
+            ))
+        
+        return ListSectionsResponse(sections=sections)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GET sections by name failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/v1/notebooks/{notebook_name}/sections/{section_name}/pages", response_model=PageListResponse)
+async def get_section_pages_by_name(
+    notebook_name: str,
+    section_name: str,
+    token: str = Depends(verify_token)
+):
+    """List pages in a specific section using names (human-friendly)"""
+    logger.info(f"GET pages request for section '{section_name}' in notebook '{notebook_name}'")
+    
+    try:
+        # First, find the notebook ID by name
+        notebooks_result = await onenote_client.list_notebooks()
+        notebook_id = None
+        
+        for nb in notebooks_result.get("notebooks", []):
+            if nb.get("name", "").lower() == notebook_name.lower():
+                notebook_id = nb.get("id")
+                break
+        
+        if not notebook_id:
+            raise HTTPException(status_code=404, detail=f"Notebook '{notebook_name}' not found")
+        
+        # Get sections and find the target section
+        sections_result = await onenote_client.list_sections(notebook_id)
+        section_id = None
+        
+        for section in sections_result.get("sections", []):
+            if section.get("name", "").lower() == section_name.lower():
+                section_id = section.get("id")
+                break
+        
+        if not section_id:
+            raise HTTPException(status_code=404, detail=f"Section '{section_name}' not found in notebook '{notebook_name}'")
+        
+        logger.info(f"Found section ID: {section_id}")
+        
+        # Get pages from the section
+        result = await onenote_client.list_pages(section_id)
+        
+        # Transform to match schema expectation (array of strings)
+        page_titles = [page.get("title", "") for page in result.get("pages", [])]
+        
+        return PageListResponse(pages=page_titles)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GET section pages by name failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/v1/pages/{page_id}", response_model=PageContent)
 async def get_page_by_id(
     page_id: str,
@@ -431,13 +555,138 @@ async def get_page_by_id(
         logger.error(f"GET page by ID failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# New endpoint for checking OneNote authentication
+@app.post("/v1/notebooks", response_model=CreateNotebookResponse)
+async def create_notebook(
+    request: CreateNotebookRequest,
+    token: str = Depends(verify_token)
+):
+    """Create a new OneNote notebook"""
+    logger.info(f"Create notebook request: {request.name}")
+    
+    try:
+        # Call real MCP create notebook tool
+        result = await onenote_client.create_notebook(request.name, request.description)
+        
+        # Parse the JSON response from MCP
+        result_data = json.loads(result) if isinstance(result, str) else result
+        
+        if result_data.get("status") == "success":
+            notebook_info = result_data.get("notebook", {})
+            return CreateNotebookResponse(
+                status="success",
+                message=f"Notebook '{request.name}' created successfully",
+                notebook_id=notebook_info.get("id"),
+                notebook_name=notebook_info.get("name")
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result_data.get("message", "Unknown error"))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Create notebook failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/v1/sections", response_model=CreateSectionResponse)
+async def create_section(
+    request: CreateSectionRequest,
+    token: str = Depends(verify_token)
+):
+    """Create a new section in a notebook using names"""
+    logger.info(f"Create section request: '{request.section_name}' in '{request.notebook_name}'")
+    
+    try:
+        # First, find the notebook ID by name
+        notebooks_result = await onenote_client.list_notebooks()
+        notebooks_data = json.loads(notebooks_result) if isinstance(notebooks_result, str) else notebooks_result
+        
+        notebook_id = None
+        for nb in notebooks_data:
+            if nb.get("name", "").lower() == request.notebook_name.lower():
+                notebook_id = nb.get("id")
+                break
+        
+        if not notebook_id:
+            raise HTTPException(status_code=404, detail=f"Notebook '{request.notebook_name}' not found")
+        
+        # Call real MCP create section tool
+        result = await onenote_client.create_section(notebook_id, request.section_name)
+        
+        # Parse the JSON response from MCP
+        result_data = json.loads(result) if isinstance(result, str) else result
+        
+        if result_data.get("status") == "success":
+            section_info = result_data.get("section", {})
+            return CreateSectionResponse(
+                status="success",
+                message=f"Section '{request.section_name}' created successfully in '{request.notebook_name}'",
+                section_id=section_info.get("id"),
+                section_name=section_info.get("name")
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result_data.get("message", "Unknown error"))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Create section failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/v1/pages/update", response_model=UpdatePageResponse)
+async def update_page_content(
+    request: UpdatePageRequest,
+    token: str = Depends(verify_token)
+):
+    """Update the content of an existing OneNote page"""
+    logger.info(f"Update page request: {request.page_id}")
+    
+    try:
+        # Call real MCP update page tool
+        result = await onenote_client.update_page_content(
+            request.page_id, 
+            request.content_html, 
+            request.target_element
+        )
+        
+        # Parse the JSON response from MCP
+        result_data = json.loads(result) if isinstance(result, str) else result
+        
+        if result_data.get("status") == "success":
+            return UpdatePageResponse(
+                status="success",
+                message="Page content updated successfully",
+                page_id=request.page_id
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result_data.get("message", "Unknown error"))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update page failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/v1/auth/clear_cache")
+async def clear_token_cache(token: str = Depends(verify_token)):
+    """Clear the stored authentication tokens"""
+    try:
+        result = await onenote_client.clear_token_cache()
+        # Parse the JSON response from MCP
+        result_data = json.loads(result) if isinstance(result, str) else result
+        return result_data
+    except Exception as e:
+        logger.error(f"Clear token cache failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Authentication status endpoint
 @app.get("/v1/auth/status")
 async def auth_status(token: str = Depends(verify_token)):
     """Check OneNote authentication status"""
     try:
         result = await onenote_client.check_authentication()
-        return result
+        # Parse the JSON response from MCP
+        result_data = json.loads(result) if isinstance(result, str) else result
+        return result_data
     except Exception as e:
         logger.error(f"Auth status check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -446,18 +695,26 @@ async def auth_status(token: str = Depends(verify_token)):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     """Custom HTTP exception handler"""
-    return create_error_response(
+    error_content = create_error_response(
         error=f"HTTP {exc.status_code}",
         detail=exc.detail
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_content
     )
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
     """General exception handler"""
     logger.error(f"Unhandled exception: {exc}")
-    return create_error_response(
+    error_content = create_error_response(
         error="Internal server error",
         detail="An unexpected error occurred"
+    )
+    return JSONResponse(
+        status_code=500,
+        content=error_content
     )
 
 if __name__ == "__main__":

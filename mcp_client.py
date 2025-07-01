@@ -378,5 +378,123 @@ class DirectOneNoteClient:
             logger.error(f"Error creating page: {e}")
             raise
 
+    async def update_page_content(self, page_id: str, content_html: str, target_element: str = "body") -> Dict[str, Any]:
+        """Update the content of an existing OneNote page"""
+        try:
+            # OneNote Graph API uses PATCH for content updates
+            # The content needs to be properly formatted HTML with the target element
+            
+            # For OneNote, we need to send a PATCH request with the HTML content
+            # The target_element parameter specifies where to insert the content
+            patch_data = [
+                {
+                    "target": target_element,
+                    "action": "append",
+                    "content": content_html
+                }
+            ]
+            
+            async with httpx.AsyncClient() as client:
+                headers = {
+                    "Authorization": f"Bearer {self.access_token}",
+                    "Content-Type": "application/json"
+                }
+                
+                response = await client.patch(
+                    f"{GRAPH_BASE_URL}/me/onenote/pages/{page_id}/content",
+                    headers=headers,
+                    json=patch_data
+                )
+                
+                if response.status_code >= 400:
+                    raise Exception(f"Error updating page content: {response.status_code} - {response.text}")
+            
+            return {
+                "status": "success",
+                "message": "Page content updated successfully",
+                "page_id": page_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Error updating page content: {e}")
+            raise
+
+    async def create_notebook(self, name: str, description: str = None) -> str:
+        """Create a new OneNote notebook"""
+        try:
+            # Create notebook data
+            notebook_data = {
+                "displayName": name
+            }
+            
+            # Create the notebook
+            result = await self.make_graph_request("/me/onenote/notebooks", "POST", notebook_data)
+            
+            return json.dumps({
+                "status": "success",
+                "message": f"Notebook '{name}' created successfully",
+                "notebook": {
+                    "id": result.get("id"),
+                    "name": result.get("displayName")
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error creating notebook: {e}")
+            return json.dumps({
+                "status": "error",
+                "message": str(e)
+            })
+
+    async def create_section(self, notebook_id: str, name: str) -> str:
+        """Create a new section in a OneNote notebook"""
+        try:
+            # Create section data
+            section_data = {
+                "displayName": name
+            }
+            
+            # Create the section
+            result = await self.make_graph_request(f"/me/onenote/notebooks/{notebook_id}/sections", "POST", section_data)
+            
+            return json.dumps({
+                "status": "success",
+                "message": f"Section '{name}' created successfully",
+                "section": {
+                    "id": result.get("id"),
+                    "name": result.get("displayName")
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error creating section: {e}")
+            return json.dumps({
+                "status": "error",
+                "message": str(e)
+            })
+
+    async def clear_token_cache(self) -> str:
+        """Clear the stored authentication tokens"""
+        try:
+            self.access_token = None
+            self.refresh_token = None
+            self.token_expires_at = None
+            
+            # Also clear the cache file if it exists
+            if TOKEN_CACHE_FILE.exists():
+                TOKEN_CACHE_FILE.unlink()
+            
+            return json.dumps({
+                "status": "success",
+                "message": "Token cache cleared"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error clearing token cache: {e}")
+            return json.dumps({
+                "status": "error",
+                "message": str(e)
+            })
+
 # Global instance
 onenote_client = DirectOneNoteClient()

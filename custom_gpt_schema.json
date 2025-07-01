@@ -1,0 +1,537 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OneNote Knowledge Assistant API",
+    "description": "Human-friendly access to OneNote notebooks, sections, and pages using names instead of IDs",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://38b3-76-186-211-172.ngrok-free.app"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "API Health Check",
+        "description": "Check if the API is running and get authentication status",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "API status information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "service": {"type": "string"},
+                    "status": {"type": "string"},
+                    "onenote_auth": {"type": "string"},
+                    "timestamp": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notebooks": {
+      "get": {
+        "operationId": "listNotebooks",
+        "summary": "List OneNote Notebooks",
+        "description": "Get a list of all available OneNote notebook names",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "List of notebook names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotebookListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createNotebook",
+        "summary": "Create New Notebook",
+        "description": "Create a new OneNote notebook with optional description",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Name of the new notebook"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Optional description for the notebook"
+                  }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notebook created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateNotebookResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sections": {
+      "post": {
+        "operationId": "createSection",
+        "summary": "Create New Section",
+        "description": "Create a new section in a notebook using human-friendly names",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "notebook_name": {
+                    "type": "string",
+                    "description": "Name of the notebook to create section in"
+                  },
+                  "section_name": {
+                    "type": "string",
+                    "description": "Name of the new section"
+                  }
+                },
+                "required": ["notebook_name", "section_name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Section created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSectionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pages/update": {
+      "post": {
+        "operationId": "updatePageContent",
+        "summary": "Update Page Content",
+        "description": "Update the content of an existing OneNote page by adding HTML content",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "page_id": {
+                    "type": "string",
+                    "description": "ID of the page to update"
+                  },
+                  "content_html": {
+                    "type": "string",
+                    "description": "HTML content to add to the page"
+                  },
+                  "target_element": {
+                    "type": "string",
+                    "default": "body",
+                    "description": "Target element to update (default: body)"
+                  }
+                },
+                "required": ["page_id", "content_html"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Page updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdatePageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/clear_cache": {
+      "post": {
+        "operationId": "clearTokenCache",
+        "summary": "Clear Authentication Cache",
+        "description": "Clear stored authentication tokens (requires re-authentication)",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "Token cache cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string"},
+                    "message": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notebooks/{notebook_name}/pages": {
+      "get": {
+        "operationId": "listPagesInNotebook",
+        "summary": "List All Pages in Notebook",
+        "description": "Get all pages from all sections in a notebook (flattened list) using the notebook name",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "notebook_name",
+            "in": "path",
+            "required": true,
+            "description": "Name of the notebook (e.g., 'Claude Conversations')",
+            "schema": {"type": "string"},
+            "example": "Claude Conversations"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of page titles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notebooks/{notebook_name}/sections": {
+      "get": {
+        "operationId": "listSectionsInNotebook",
+        "summary": "List Sections in Notebook",
+        "description": "Get all sections in a notebook using the notebook name for context and organization",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "notebook_name",
+            "in": "path",
+            "required": true,
+            "description": "Name of the notebook (e.g., 'Claude Conversations')",
+            "schema": {"type": "string"},
+            "example": "Claude Conversations"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of sections with metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SectionsListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notebooks/{notebook_name}/sections/{section_name}/pages": {
+      "get": {
+        "operationId": "listPagesInSection",
+        "summary": "List Pages in Section",
+        "description": "Get all pages within a specific section using human-friendly names",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "notebook_name",
+            "in": "path",
+            "required": true,
+            "description": "Name of the notebook",
+            "schema": {"type": "string"},
+            "example": "Claude Conversations"
+          },
+          {
+            "name": "section_name",
+            "in": "path",
+            "required": true,
+            "description": "Name of the section",
+            "schema": {"type": "string"},
+            "example": "VDTP"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of page titles in the section",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/pages/{page_id}": {
+      "get": {
+        "operationId": "getPageContent",
+        "summary": "Get Full Page Content",
+        "description": "Retrieve the complete content of a OneNote page by its ID",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "page_id",
+            "in": "path",
+            "required": true,
+            "description": "OneNote page ID",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page content with full HTML",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageContentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "post": {
+        "operationId": "searchContent",
+        "summary": "Search OneNote Content",
+        "description": "Search across all OneNote content for specific queries",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results with page snippets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/get_page": {
+      "post": {
+        "operationId": "getPageContentAlt",
+        "summary": "Get Page Content (Alternative Method)",
+        "description": "Alternative method to retrieve page content using POST with page ID in body",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "page_id": {
+                    "type": "string",
+                    "description": "OneNote page ID"
+                  }
+                },
+                "required": ["page_id"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Page content with full HTML",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageContentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SearchRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10,
+            "description": "Maximum number of results"
+          }
+        },
+        "required": ["query"]
+      },
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {"type": "string"},
+                "page_id": {"type": "string"},
+                "snippet": {"type": "string"},
+                "notebook": {"type": "string"}
+              },
+              "required": ["title", "page_id"]
+            }
+          },
+          "total_count": {"type": "integer"},
+          "query": {"type": "string"}
+        },
+        "required": ["results", "total_count", "query"]
+      },
+      "NotebookListResponse": {
+        "type": "object",
+        "properties": {
+          "notebooks": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "required": ["notebooks"]
+      },
+      "PageListResponse": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "required": ["pages"]
+      },
+      "PageContentResponse": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "content": {"type": "string"},
+          "page_id": {"type": "string"},
+          "notebook": {"type": "string"},
+          "last_modified": {"type": "string"}
+        },
+        "required": ["title", "content", "page_id"]
+      },
+      "SectionsListResponse": {
+        "type": "object",
+        "properties": {
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "page_count": {"type": "integer"},
+                "created": {"type": "string"},
+                "modified": {"type": "string"}
+              },
+              "required": ["id", "name"]
+            }
+          }
+        },
+        "required": ["sections"]
+      },
+      "CreateNotebookResponse": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string"},
+          "message": {"type": "string"},
+          "notebook_id": {"type": "string"},
+          "notebook_name": {"type": "string"}
+        },
+        "required": ["status", "message"]
+      },
+      "CreateSectionResponse": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string"},
+          "message": {"type": "string"},
+          "section_id": {"type": "string"},
+          "section_name": {"type": "string"}
+        },
+        "required": ["status", "message"]
+      },
+      "UpdatePageResponse": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string"},
+          "message": {"type": "string"},
+          "page_id": {"type": "string"}
+        },
+        "required": ["status", "message", "page_id"]
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "memex-dev-token-2025"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}
