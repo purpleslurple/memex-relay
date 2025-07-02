@@ -47,29 +47,30 @@ else
 fi
 
 # Check OneNote Authentication
-echo -n "📝 OneNote Auth: "
-AUTH_STATUS=$(curl -s -H "Authorization: Bearer memex-dev-token-2025" http://127.0.0.1:5000/v1/auth/status 2>/dev/null)
-if [[ $? -eq 0 ]]; then
-    AUTH_RESULT=$(echo "$AUTH_STATUS" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    if data.get('authenticated'):
-        print('✅ AUTHENTICATED')
-    else:
-        print('❌ NOT AUTHENTICATED')
-except:
-    print('❓ UNKNOWN')
-" 2>/dev/null)
-    
-    if [[ "$AUTH_RESULT" == *"AUTHENTICATED"* ]]; then
-        echo -e "${GREEN}$AUTH_RESULT${NC}"
-    else
-        echo -e "${RED}$AUTH_RESULT${NC}"
-    fi
-else
-    echo -e "${RED}❌ API UNREACHABLE${NC}"
-fi
+# Commented out - using /v1/notebooks endpoint test instead
+# echo -n "📝 OneNote Auth: "
+# AUTH_STATUS=$(curl -s -H "Authorization: Bearer memex-dev-token-2025" http://127.0.0.1:5000/v1/auth/status 2>/dev/null)
+# if [[ $? -eq 0 ]]; then
+#     AUTH_RESULT=$(echo "$AUTH_STATUS" | python3 -c "
+# import sys, json
+# try:
+#     data = json.load(sys.stdin)
+#     if data.get('authenticated'):
+#         print('✅ AUTHENTICATED')
+#     else:
+#         print('❌ NOT AUTHENTICATED')
+# except:
+#     print('❓ UNKNOWN')
+# " 2>/dev/null)
+#     
+#     if [[ "$AUTH_RESULT" == *"AUTHENTICATED"* ]]; then
+#         echo -e "${GREEN}$AUTH_RESULT${NC}"
+#     else
+#         echo -e "${RED}$AUTH_RESULT${NC}"
+#     fi
+# else
+#     echo -e "${RED}❌ API UNREACHABLE${NC}"
+# fi
 
 # Quick endpoint test
 echo ""
@@ -87,4 +88,4 @@ echo "================================================"
 echo "💡 Quick Commands:"
 echo "   Start ngrok: ngrok http 5000"
 echo "   Start API: cd ~/Desktop/memex-relay && python main.py"
-echo "   Auth OneNote: curl -H 'Authorization: Bearer memex-dev-token-2025' http://127.0.0.1:5000/v1/auth/start"
+echo "   Test notebooks: curl -H 'Authorization: Bearer memex-dev-token-2025' http://127.0.0.1:5000/v1/notebooks"
