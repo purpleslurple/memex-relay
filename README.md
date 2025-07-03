@@ -112,11 +112,6 @@ curl -X GET http://localhost:5000/v1/notebooks \
 
 Use the provided `custom_gpt_schema.json` to configure ChatGPT with direct access to this API. This enables natural language queries against your OneNote knowledge base.
 
-**Available Schema Files:**
-- `custom_gpt_schema.json` - Current production schema
-- `custom_gpt_schema_claude_capable.json` - Enhanced Claude-compatible version
-- `custom_gpt_schema_original.json` - Original design reference
-
 ## Multi-Agent Memory Bus
 
 This API enables the **Multi-Agent Memory Bus** - a three-way AI collaboration system where:
