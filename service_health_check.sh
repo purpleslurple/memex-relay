@@ -39,7 +39,7 @@ fi
 
 # Check Memex Relay API
 echo -n "🚀 Memex Relay API: "
-API_HEALTH=$(curl -s http://127.0.0.1:5000/health 2>/dev/null)
+API_HEALTH=$(curl -s http://127.0.0.1:5000/ 2>/dev/null)
 if [[ $? -eq 0 ]]; then
     echo -e "${GREEN}✅ UP${NC} - $(echo "$API_HEALTH" | python3 -c "import sys, json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "Response received")"
 else
