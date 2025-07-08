@@ -364,6 +364,51 @@
         }
       }
     },
+    "/v1/pages": {
+      "post": {
+        "operationId": "createPage",
+        "summary": "Create New OneNote Page",
+        "description": "Create a new page in a specific section using section ID",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "section_id": {
+                    "type": "string",
+                    "description": "ID of the section to create the page in"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Title of the new page"
+                  },
+                  "content_html": {
+                    "type": "string",
+                    "description": "Optional HTML content for the page body"
+                  }
+                },
+                "required": ["section_id", "title"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Page created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/get_page": {
       "post": {
         "operationId": "getPageContentAlt",
@@ -517,6 +562,16 @@
           "status": {"type": "string"},
           "message": {"type": "string"},
           "page_id": {"type": "string"}
+        },
+        "required": ["status", "message", "page_id"]
+      },
+      "CreatePageResponse": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string"},
+          "message": {"type": "string"},
+          "page_id": {"type": "string"},
+          "page_title": {"type": "string"}
         },
         "required": ["status", "message", "page_id"]
       }

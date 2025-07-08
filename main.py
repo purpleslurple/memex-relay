@@ -84,6 +84,11 @@ class CreateSectionRequest(BaseModel):
     notebook_name: str = Field(..., description="Name of the notebook to create section in")
     section_name: str = Field(..., description="Name of the new section")
 
+class CreatePageRequest(BaseModel):
+    section_id: str = Field(..., description="ID of the section to create the page in")
+    title: str = Field(..., description="Title of the new page")
+    content_html: Optional[str] = Field(None, description="Optional HTML content for the page body")
+
 class UpdatePageRequest(BaseModel):
     page_id: str = Field(..., description="ID of the page to update")
     content_html: str = Field(..., description="HTML content to add to the page")
@@ -100,6 +105,12 @@ class CreateSectionResponse(BaseModel):
     message: str
     section_id: Optional[str] = None
     section_name: Optional[str] = None
+
+class CreatePageResponse(BaseModel):
+    status: str
+    message: str
+    page_id: Optional[str] = None
+    page_title: Optional[str] = None
 
 class UpdatePageResponse(BaseModel):
     status: str
@@ -587,6 +598,42 @@ async def create_notebook(
         logger.error(f"Create notebook failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/v1/pages", response_model=CreatePageResponse)
+async def create_page(
+    request: CreatePageRequest,
+    token: str = Depends(verify_token)
+):
+    """Create a new page in a OneNote section"""
+    logger.info(f"Create page request: '{request.title}' in section {request.section_id}")
+    
+    try:
+        # Call real MCP create page tool
+        result = await onenote_client.create_page(
+            request.section_id, 
+            request.title, 
+            request.content_html
+        )
+        
+        # Parse the JSON response from MCP
+        result_data = json.loads(result) if isinstance(result, str) else result
+        
+        if result_data.get("status") == "success":
+            page_info = result_data.get("page", {})
+            return CreatePageResponse(
+                status="success",
+                message=f"Page '{request.title}' created successfully",
+                page_id=page_info.get("id"),
+                page_title=page_info.get("title")
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result_data.get("message", "Unknown error"))
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Create page failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/v1/sections", response_model=CreateSectionResponse)
 async def create_section(
     request: CreateSectionRequest,
@@ -601,7 +648,7 @@ async def create_section(
         notebooks_data = json.loads(notebooks_result) if isinstance(notebooks_result, str) else notebooks_result
         
         notebook_id = None
-        for nb in notebooks_data:
+        for nb in notebooks_data.get("notebooks", []):
             if nb.get("name", "").lower() == request.notebook_name.lower():
                 notebook_id = nb.get("id")
                 break
