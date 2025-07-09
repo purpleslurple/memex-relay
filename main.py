@@ -608,7 +608,7 @@ async def create_page(
     
     try:
         # Call real MCP create page tool
-        result = await onenote_client.create_page(
+        result = await onenote_client.create_page_by_section(
             request.section_id, 
             request.title, 
             request.content_html

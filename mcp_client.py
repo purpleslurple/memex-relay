@@ -409,15 +409,18 @@ class DirectOneNoteClient:
                 if response.status_code >= 400:
                     raise Exception(f"Error updating page content: {response.status_code} - {response.text}")
             
-            return {
+            return json.dumps({
                 "status": "success",
                 "message": "Page content updated successfully",
                 "page_id": page_id
-            }
+            })
             
         except Exception as e:
             logger.error(f"Error updating page content: {e}")
-            raise
+            return json.dumps({
+                "status": "error",
+                "message": str(e)
+            })
 
     async def create_notebook(self, name: str, description: str = None) -> str:
         """Create a new OneNote notebook"""
@@ -468,6 +471,82 @@ class DirectOneNoteClient:
             
         except Exception as e:
             logger.error(f"Error creating section: {e}")
+            return json.dumps({
+                "status": "error",
+                "message": str(e)
+            })
+
+    async def create_page_by_section(self, section_id: str, title: str, content_html: str = None) -> str:
+        """Create a new page in a specific OneNote section using section ID"""
+        try:
+            # Create the page HTML
+            if content_html:
+                # Use provided HTML content
+                if not content_html.strip().startswith('<html>'):
+                    page_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{title}</title>
+    <meta name="created" content="{time.strftime('%Y-%m-%dT%H:%M:%S.0000000')}" />
+</head>
+<body>
+    <div>
+        <h1>{title}</h1>
+        <div>{content_html}</div>
+    </div>
+</body>
+</html>"""
+                else:
+                    page_html = content_html
+            else:
+                # Create a basic page with just the title
+                page_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{title}</title>
+    <meta name="created" content="{time.strftime('%Y-%m-%dT%H:%M:%S.0000000')}" />
+</head>
+<body>
+    <div>
+        <h1>{title}</h1>
+        <p>Page created by Memex Relay API</p>
+    </div>
+</body>
+</html>"""
+            
+            # Create the page
+            async with httpx.AsyncClient() as client:
+                headers = {
+                    "Authorization": f"Bearer {self.access_token}",
+                    "Content-Type": "application/xhtml+xml"
+                }
+                
+                response = await client.post(
+                    f"{GRAPH_BASE_URL}/me/onenote/sections/{section_id}/pages",
+                    headers=headers,
+                    content=page_html
+                )
+                
+                if response.status_code >= 400:
+                    raise Exception(f"Error creating page: {response.status_code} - {response.text}")
+                
+                page = response.json()
+            
+            return json.dumps({
+                "status": "success",
+                "message": f"Page '{title}' created successfully",
+                "page": {
+                    "id": page.get("id"),
+                    "title": page.get("title"),
+                    "created": page.get("createdDateTime"),
+                    "content_url": page.get("contentUrl")
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error creating page by section: {e}")
             return json.dumps({
                 "status": "error",
                 "message": str(e)
