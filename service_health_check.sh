@@ -37,13 +37,41 @@ else
     echo -e "${RED}❌ DOWN${NC}"
 fi
 
-# Check Memex Relay API
+# Check Memex Relay API with detailed status
 echo -n "🚀 Memex Relay API: "
 API_HEALTH=$(curl -s http://127.0.0.1:5000/ 2>/dev/null)
-if [[ $? -eq 0 ]]; then
-    echo -e "${GREEN}✅ UP${NC} - $(echo "$API_HEALTH" | python3 -c "import sys, json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "Response received")"
+CURL_EXIT=$?
+
+if [[ $CURL_EXIT -eq 0 && -n "$API_HEALTH" ]]; then
+    # Try to parse the JSON response
+    API_STATUS=$(echo "$API_HEALTH" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if 'service' in data and 'Memex Relay' in data.get('service', ''):
+        print(f\"{data.get('status', 'unknown')}|{data.get('onenote_connectivity', 'unknown')}\")
+    else:
+        print('not_api|unknown')
+except:
+    print('parse_error|unknown')
+" 2>/dev/null)
+    
+    STATUS=$(echo "$API_STATUS" | cut -d'|' -f1)
+    ONENOTE=$(echo "$API_STATUS" | cut -d'|' -f2)
+    
+    if [[ "$STATUS" == "operational" ]]; then
+        echo -e "${GREEN}✅ UP${NC} - OneNote: $ONENOTE"
+    elif [[ "$STATUS" == "degraded" ]]; then
+        echo -e "${YELLOW}⚠️  DEGRADED${NC} - OneNote: $ONENOTE"
+    elif [[ "$STATUS" == "not_api" ]]; then
+        echo -e "${RED}❌ DOWN${NC} - Got non-API response (ngrok error page?)"
+    elif [[ "$STATUS" == "parse_error" ]]; then
+        echo -e "${RED}❌ DOWN${NC} - Invalid JSON response"
+    else
+        echo -e "${RED}❌ ERROR${NC} - Status: $STATUS"
+    fi
 else
-    echo -e "${RED}❌ DOWN${NC}"
+    echo -e "${RED}❌ DOWN${NC} - No response from localhost:5000"
 fi
 
 # Check OneNote Authentication
@@ -72,15 +100,26 @@ fi
 #     echo -e "${RED}❌ API UNREACHABLE${NC}"
 # fi
 
-# Quick endpoint test
+# Quick endpoint test with error details
 echo ""
-echo "🧪 Quick Endpoint Test:"
-echo -n "   /v1/notebooks: "
-NOTEBOOKS_TEST=$(curl -s -H "Authorization: Bearer memex-dev-token-2025" http://127.0.0.1:5000/v1/notebooks 2>/dev/null)
-if [[ $? -eq 0 && $(echo "$NOTEBOOKS_TEST" | grep -c "notebooks\|error") -gt 0 ]]; then
-    echo -e "${GREEN}✅ RESPONDING${NC}"
+echo "🧪 OneNote Functionality Test:"
+echo -n "   /v1/auth/status: "
+AUTH_TEST=$(curl -s -H "Authorization: Bearer memex-dev-token-2025" http://127.0.0.1:5000/v1/auth/status 2>/dev/null)
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer memex-dev-token-2025" http://127.0.0.1:5000/v1/auth/status 2>/dev/null)
+
+if [[ "$HTTP_CODE" == "200" ]]; then
+    AUTH_STATUS=$(echo "$AUTH_TEST" | python3 -c "import sys, json; data=json.load(sys.stdin); print('authenticated' if data.get('status') == 'authenticated' else 'not_authenticated')" 2>/dev/null || echo "unknown")
+    if [[ "$AUTH_STATUS" == "authenticated" ]]; then
+        USER_EMAIL=$(echo "$AUTH_TEST" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('email', 'unknown'))" 2>/dev/null || echo "unknown")
+        echo -e "${GREEN}✅ AUTHENTICATED${NC} - $USER_EMAIL"
+    else
+        echo -e "${RED}❌ NOT AUTHENTICATED${NC}"
+    fi
+elif [[ "$HTTP_CODE" == "500" ]]; then
+    ERROR_MSG=$(echo "$AUTH_TEST" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('detail', 'Unknown error'))" 2>/dev/null || echo "Internal server error")
+    echo -e "${RED}❌ AUTH ERROR${NC} - $ERROR_MSG"
 else
-    echo -e "${RED}❌ FAILED${NC}"
+    echo -e "${RED}❌ FAILED${NC} - HTTP $HTTP_CODE"
 fi
 
 echo ""

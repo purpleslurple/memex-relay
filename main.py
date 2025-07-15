@@ -218,17 +218,53 @@ def create_error_response(error: str, detail: str = None) -> Dict:
 # API Endpoints
 @app.get("/")
 async def root():
-    """API health check"""
-    # Check authentication status for the health check
-    auth_status = await onenote_client.check_authentication()
-    
+    """API health check with lightweight OneNote connectivity test"""
+    try:
+        # Check authentication status for the health check
+        auth_status = await onenote_client.check_authentication()
+        auth_ok = auth_status.get("status") == "authenticated"
+        
+        # The check_authentication already does a lightweight test (/me endpoint)
+        # No need to call list_notebooks which can be slow with many notebooks
+        if auth_ok:
+            onenote_status = "connected"
+        elif auth_status.get("status") == "not_authenticated":
+            onenote_status = "not_authenticated"
+        else:
+            onenote_status = "error"
+        
+        return {
+            "service": "Memex Relay API",
+            "version": "1.0.0", 
+            "status": "operational" if auth_ok else "degraded",
+            "timestamp": datetime.utcnow().isoformat(),
+            "onenote_auth": auth_status.get("status", "unknown"),
+            "onenote_connectivity": onenote_status,
+            "note": "Connected to real OneNote MCP server"
+        }
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "service": "Memex Relay API",
+            "version": "1.0.0",
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "onenote_auth": "error",
+            "onenote_connectivity": "error",
+            "error": str(e),
+            "note": "Health check encountered an error"
+        }
+
+# Add a dedicated health endpoint that doesn't require auth
+@app.get("/health")
+async def health_check():
+    """Lightweight health check without authentication requirements"""
     return {
         "service": "Memex Relay API",
-        "version": "1.0.0",
         "status": "operational",
         "timestamp": datetime.utcnow().isoformat(),
-        "onenote_auth": auth_status.get("status", "unknown"),
-        "note": "Connected to real OneNote MCP server"
+        "version": "1.0.0"
     }
 
 @app.post("/v1/search", response_model=SearchResponse)
