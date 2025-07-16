@@ -72,14 +72,95 @@ class DirectOneNoteClient:
             logger.warning(f"Failed to load tokens: {e}")
             return False
 
+    async def manual_token_refresh(self) -> bool:
+        """Manually refresh access token using cached refresh token."""
+        if not self.refresh_token:
+            logger.info("No refresh token available for manual refresh")
+            return False
+        
+        try:
+            client_id = self.get_client_id()
+            
+            # Microsoft token endpoint
+            token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+            
+            # Prepare refresh token request
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": self.refresh_token,
+                "client_id": client_id,
+                "scope": " ".join(SCOPES + ["offline_access"])
+            }
+            
+            # Make the refresh request
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    token_url,
+                    data=data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+                
+                if response.status_code == 200:
+                    token_data = response.json()
+                    
+                    # Save the new tokens to cache file
+                    self.save_tokens(
+                        token_data["access_token"],
+                        token_data.get("refresh_token", self.refresh_token),
+                        token_data.get("expires_in", 3600)
+                    )
+                    
+                    logger.info("Token refreshed successfully via manual refresh (Memex Relay)")
+                    return True
+                else:
+                    logger.warning(f"Manual token refresh failed: {response.status_code} - {response.text}")
+                    return False
+                    
+        except Exception as e:
+            logger.warning(f"Manual token refresh error: {e}")
+            return False
+
+    def save_tokens(self, access_tok: str, refresh_tok: str = None, expires_in: int = 3600) -> None:
+        """Save tokens to the shared cache file for persistence across sessions."""
+        self.access_token = access_tok
+        if refresh_tok:
+            self.refresh_token = refresh_tok
+        self.token_expires_at = time.time() + expires_in - 300  # 5 min buffer
+        
+        # Save to the shared cache file (same as MCP server)
+        if not TOKEN_CACHE_ENABLED:
+            logger.info("Token caching disabled - tokens will not persist across sessions")
+            return
+        
+        try:
+            token_data = {
+                "access_token": self.access_token,
+                "refresh_token": self.refresh_token,
+                "expires_at": self.token_expires_at
+            }
+            
+            with open(TOKEN_CACHE_FILE, 'w') as f:
+                json.dump(token_data, f)
+            
+            # Set secure permissions (user read/write only)
+            TOKEN_CACHE_FILE.chmod(0o600)
+            logger.info(f"Tokens saved to shared cache: {TOKEN_CACHE_FILE}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to save tokens: {e}")
+
     async def ensure_valid_token(self) -> bool:
-        """Ensure we have a valid access token"""
+        """Ensure we have a valid access token, refreshing if needed."""
         # First, try loading cached tokens from MCP server
         if not self.access_token:
             self.load_tokens()
         
         # Check if current token is still valid
         if self.access_token and self.token_expires_at and time.time() < self.token_expires_at:
+            return True
+        
+        # Try to refresh the token using cached refresh token
+        if await self.manual_token_refresh():
             return True
         
         # No valid token available
