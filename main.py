@@ -146,7 +146,7 @@ class NotebookInfo(BaseModel):
     section_count: Optional[int] = None
 
 class NotebookListResponse(BaseModel):
-    notebooks: List[str]
+    notebooks: List[NotebookInfo]
 
 class PageListResponse(BaseModel):
     pages: List[str]
@@ -357,17 +357,23 @@ async def write_note(
 
 @app.get("/v1/notebooks", response_model=NotebookListResponse)
 async def list_notebooks(token: str = Depends(verify_token)):
-    """List available OneNote notebooks"""
+    """List available OneNote notebooks with IDs and metadata"""
     logger.info("List notebooks request")
     
     try:
         # Call real MCP list notebooks tool
         result = await onenote_client.list_notebooks()
         
-        # Transform to match schema expectation (array of strings)
-        notebook_names = [nb.get("name", "") for nb in result.get("notebooks", [])]
+        # Transform to include both names and IDs
+        notebooks = []
+        for nb in result.get("notebooks", []):
+            notebooks.append(NotebookInfo(
+                id=nb.get("id", ""),
+                name=nb.get("name", ""),
+                section_count=nb.get("section_count", 0)
+            ))
         
-        return NotebookListResponse(notebooks=notebook_names)
+        return NotebookListResponse(notebooks=notebooks)
         
     except HTTPException:
         raise

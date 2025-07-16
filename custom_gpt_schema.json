@@ -490,7 +490,15 @@
         "properties": {
           "notebooks": {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "description": "OneNote notebook ID"},
+                "name": {"type": "string", "description": "Notebook name"},
+                "section_count": {"type": "integer", "description": "Number of sections in notebook"}
+              },
+              "required": ["id", "name"]
+            }
           }
         },
         "required": ["notebooks"]
